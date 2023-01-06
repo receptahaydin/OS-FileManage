@@ -9,321 +9,279 @@
 #include <sys/types.h>
 #include <sys/ipc.h>
 
-#define MAX_BUF 128
-//defined variables
-char file_List[10][100];
+// değişkenker, lock, cond ve struct tanımlandı
+char dosya_listesi[10][10];
 char response[128];
 char c;
-int count = 0, id = 0;
+int client_size = 0;
 pthread_t threads[5];
-//found file_list size and assigned to the file_length.
-int file_length = sizeof(file_List) / sizeof(file_List[0]);
-//defined lock and cond.
 pthread_mutex_t lock;
 pthread_cond_t cond;
-//defined struct params
-struct params
+// argumanlar struct ile tutuldu
+struct parameters
 {
     char *arg1;
     char *arg2;
 };
 
-//creates 2D matrix
-char **generateMatrix(int columns, int rows)
+// girilen argümanları boşluğa göre bölüştürme metodu
+char **komutBolustur(char *str)
 {
-    //creates array as dynamic in memory.
-    char **matrix = malloc(rows * sizeof(char*));
-    for (int i = 0; i < rows; i++)
+    char *token = strtok(str, " ");
+    char **commands = malloc(10 * sizeof(char *));
+    for (int i = 0; i < 10; i++)
     {
-        matrix[i] = malloc(columns * sizeof(char));
+        commands[i] = malloc(10 * sizeof(char));
     }
 
-    return matrix;
-}
-//splits a input into words.
-char **splitIntoWords(char *str)
-{
-    int i = 0;
-    //splited according to  " " and assigned to token.
-    char *token = strtok(str, " ");
-    char **words;
-    //generated 10,10 2D matris for words.
-    words = generateMatrix(10, 10);
-    // continues until token is not null
+    int index = 0;
     while (token != NULL)
     {
-        //assigned to words[i]
-        *(words + i) = token;
-        i++;
-        //splited according to  " " and assigned to token.
+        *(commands + index) = token;
+        index++;
         token = strtok(NULL, " ");
     }
 
-    return words;
+    return commands;
 }
 
-void *createFile(char *args)
+int dosyaKontrol(char *dosya_adi)
 {
-    //locked thread.
-    pthread_mutex_lock(&lock);
-    struct params *params = args;
-    //arg1 is assigned to file_name
-    char *file_name = params->arg1;
-    printf("filename : %s\n", file_name);
-    //checks if file is created.
-    int idx = -1;
-    //if file_length[i] is not null, compares with i and if they are equal i assigned to idx.
-    for (int i = 0; i < file_length; i++)
+    // dosyanın olup olmama kontrolü
+    int kontrol = -1;
+    for (int i = 0; i < 10; i++)
     {
-        if (file_List[i] != NULL)
+        if (dosya_listesi[i] != NULL && strcmp(dosya_listesi[i], dosya_adi) == 0)
         {
-            if (strcmp(file_List[i], file_name) == 0)
-            {
-                idx = i;
-            }
+            kontrol = i; // dosya bulunur
+            break;
         }
     }
-    //if idx = -1, file has never been created. So file is created.
-    if (idx == -1)
+    return kontrol;
+}
+
+void *dosyaOlustur(char *args)
+{
+    // thread lock
+    pthread_mutex_lock(&lock);
+    struct parameters *parameters = args;
+    // dosyanın adı argümandan bulunur
+    char *dosya_adi = parameters->arg1;
+    printf("Dosya Adi : %s\n", dosya_adi);
+
+    // kontrol = -1 ise dosya yoktur ve oluşturulur
+    if (dosyaKontrol(dosya_adi) == -1)
     {
         for (int i = 0; i < 10; i++)
         {
-            if (file_List[i][0] == '\0')
+            if (dosya_listesi[i][0] == NULL)
             {
-                //created a file empty index of file_list.
-                strcpy(file_List[i], file_name);
-                FILE *file = fopen(file_name, "w");
+                // file ismi boş indexe yazılır ve oluşturulur
+                strcpy(dosya_listesi[i], dosya_adi);
+                FILE *file = fopen(dosya_adi, "w");
                 fclose(file);
-                strcpy(response, "File Created\n");
-
+                strcpy(response, "Dosya olusturuldu!\n");
                 break;
             }
         }
     }
-    //if idx!=-1, gave a response message.
     else
     {
-        strcpy(response, "File has already created.\n");
+        strcpy(response, "Dosya zaten olusturulmus!\n");
+        printf("---Dosya Listesi---\n");//Kullanıcının farklı bir dosya ismi seçebilmesi için oluşturulmuş olan dosyalar yazdırıldı
+        for (int i = 0; i < 10; i++)
+        {
+            if (strlen(dosya_listesi[i]) > 0)
+            {
+                printf("%s\n", dosya_listesi[i]);
+            }
+        }
     }
-    //unlocked the thread.
+
+    // thread unlock
     pthread_mutex_unlock(&lock);
 }
 
-void *deleteFile(char *args)
+void *dosyaSil(char *args)
 {
-    //locked thread.
+    // thread lock
     pthread_mutex_lock(&lock);
-    struct params *params = args;
-    //arg1 is assigned to file_name
-    char *file_name = params->arg1;
-    printf("filename : %s\n", file_name);
-    //checks if file is created.
-    int idx = -1;
-    //if file_length[i] is not null, compares with i and if they are equal i assigned to idx.
-    for (int i = 0; i < file_length; i++)
+    struct parameters *parameters = args;
+    // dosyanın adı argümandan bulunur
+    char *dosya_adi = parameters->arg1;
+    printf("Dosya Adi : %s\n", dosya_adi);
+    // kontrol != -1 ise dosya vardır ve silinir
+    if (dosyaKontrol(dosya_adi) != -1)
     {
-        if (file_List[i] != NULL)
-        {
-            if (strcmp(file_List[i], file_name) == 0)
-            {
-                idx = i;
-                break;
-            }
-        }
+        dosya_listesi[dosyaKontrol(dosya_adi)][0] = '\0';
+        remove(dosya_adi);
+        strcpy(response, "Dosya silindi!\n");
     }
-    //if idx != -1, file has never been deleted. So file is deleted.
-    if (idx != -1)
-    {
-        file_List[idx][0] = '\0';
-        remove(file_name);
-        strcpy(response, "File Deleted!\n");
-    }
-    //if idx=-1, gave a response message.
     else
     {
-        strcpy(response, "File Cannot Find.\n");
+        strcpy(response, "Belirtilen dosya bulunamadi.\n");
     }
-    //unlocked the thread.
+    // thread unlock
     pthread_mutex_unlock(&lock);
 }
 
-void *readFile(char *args)
+void *dosyaOku(char *args)
 {
+    // thread lock
     pthread_mutex_lock(&lock);
-    struct params *params = args;
-    char *file_name = params->arg1;
-    char array[128];
-    int count = 0;
-    printf("filename : %s\n", file_name);
-    int idx = -1;
-    for (int i = 0; i < file_length; i++)
+    struct parameters *parameters = args;
+    // dosyanın adı argümandan bulunur
+    char *dosya_adi = parameters->arg1;
+    char icerik[128];
+    printf("Dosya Adi : %s\n", dosya_adi);
+    // kontrol != -1 ise dosya vardır ve okunur
+    if (dosyaKontrol(dosya_adi) != -1)
     {
-        if (file_List[i] != NULL)
-        {
-            if (strcmp(file_List[i], file_name) == 0)
-            {
-                idx = i;
-                break;
-            }
-        }
-    }
-    //if idx != -1, file is read.
-    if (idx != -1)
-    {
-        int index = 0;
-        FILE *fptr = fopen(file_name, "r");
+        int i = 0;
+        FILE *fptr = fopen(dosya_adi, "r");
         while ((c = fgetc(fptr)) != EOF)
         {
-            array[index] = c;
-            index++;    
-            count++; 
+            icerik[i] = c;
+            i++;
         }
-        array[index - 1] = '\0';
+        icerik[i - 1] = '\0';
         fclose(fptr);
-        strcpy(response, array);
+        strcpy(response, icerik);
     }
     else
     {
-        strcpy(response, "File Cannot Find.\n");
+        strcpy(response, "Belirtilen dosya bulunamadi.\n");
     }
+    // thread unlock
     pthread_mutex_unlock(&lock);
 }
 
-void *writeFile(char *args)
+void *dosyayaYaz(char *args)
 {
+    // thread lock
     pthread_mutex_lock(&lock);
-    struct params *params = args;
-    //arg1 is assigned to file_name
-    char *file_name = params->arg1;
-    //arg2 is assigned to data as text.
-    char *data = params->arg2;
-    printf("filename : %s\n", file_name);
-    printf("data : %s\n", data);
-    int idx = -1;
-    for (int i = 0; i < 10; i++)
+    struct parameters *parameters = args;
+    // dosyanın adı argüman 1'den bulunur
+    char *dosya_adi = parameters->arg1;
+    // yazılacak input argüman 2'den bulunur
+    char *input = parameters->arg2;
+    printf("Dosya Adi : %s\n", dosya_adi);
+    // kontrol != -1 ise dosya vardır ve içine yazılır
+    if (dosyaKontrol(dosya_adi) != -1)
     {
-        if (file_List[i] != NULL)
-        {
-            if (strcmp(file_List[i], file_name) == 0)
-            {
-                idx = i;
-                break;
-            }
-        }
-    }
-    //printed the data.
-    if (idx != -1)
-    {
-
-        FILE *file = fopen(file_name, "a+");
+        // dosya yazma işlemleri
+        FILE *file = fopen(dosya_adi, "a+");
         if (file == NULL)
         {
             perror("fopen failed");
-            // return;
         }
 
-        fprintf(file, "%s\n", data);
+        fprintf(file, "%s\n", input);
 
         if (fclose(file) == EOF)
         {
             perror("fclose failed");
             // return;
         }
-        strcpy(response, "File Writed!\n");
+        printf("Input : %s\n", input);
+        strcpy(response, "Input dosyaya yazildi!\n");
     }
     else
     {
-        strcpy(response, "File Cannot Find.\n");
+        strcpy(response, "Belirtilen dosya bulunamadi.\n");
     }
+    // thread unlock
     pthread_mutex_unlock(&lock);
 }
 
-int main(){
-
+int main()
+{
     char **command;
     void *status;
     int file_read;
     int resp = 0;
-    char *myfifo = "/tmp/myfifo";
-    char buffer[MAX_BUF];
-    //file_list is filled with '/0'
-    memset(file_List, '\0', sizeof(file_List));
-    //initialized mutex and assigned lock as first parameter.
+    char *myfifo = "/tmp/file_manager_named_pipe";
+    char buffer[128];
     pthread_mutex_init(&lock, NULL);
-    //initialized cond and assigned cond as first parameter.
     pthread_cond_init(&cond, NULL);
 
     while (1)
     {
-        //read myfifo and myfifo opened as read only
         file_read = open(myfifo, O_RDONLY);
-        read(file_read, buffer, MAX_BUF);
-        //command is splited into words.
-        command = splitIntoWords(buffer);
+        read(file_read, buffer, 128);
+        // girilen komutlar bölüştürme metoduna yollanır
+        command = komutBolustur(buffer);
 
-        struct params params;
-        //assigned command elements to params variables.
-        params.arg1 = command[1];
-        params.arg2 = command[2];
-        //checked command's first element.
-        if (strcmp(command[0], "init") == 0){
-            count++;
-            printf("%d.client is created\n", count);
+        struct parameters parameters;
+        // komutlar argümanlara atanır
+        parameters.arg1 = command[1];
+        parameters.arg2 = command[2];
+        // client oluşturma, init işlemi
+        if (strcmp(command[0], "init") == 0)
+        {
+            client_size++;
+            printf("%d. Client olusturuldu!\n", client_size);
         }
-        //if first element equals to create, created pthread and called createfile function.
+        // create komutu çağırılırsa pthread ve dosya oluşturulur
         else if (strcmp(command[0], "create") == 0)
         {
-            pthread_create(&threads[0], NULL, createFile, &params);
+            pthread_create(&threads[0], NULL, dosyaOlustur, &parameters);
             resp = 1;
         }
-        //if first element equals to delete, created pthread and called deletefile function.
+        // delete komutu çağırılırsa pthread oluşturulur ve belirtilen dosya silinir
         else if (strcmp(command[0], "delete") == 0)
         {
-            pthread_create(&threads[1], NULL, deleteFile, &params);
+            pthread_create(&threads[1], NULL, dosyaSil, &parameters);
             resp = 1;
         }
-        //if first element equals to write, created pthread and called writefile function.
+        // write komutu çağırılırsa pthread oluşturulur ve belirtilen input o dosyaya yazılır
         else if (strcmp(command[0], "write") == 0)
         {
-            pthread_create(&threads[2], NULL, writeFile, &params);
+            pthread_create(&threads[2], NULL, dosyayaYaz, &parameters);
             resp = 1;
         }
-        //if first element equals to read, created pthread and called readfile function.
+        // read komutu çağırılırsa pthread oluşturulur ve belirtilen dosya okunur
         else if (strcmp(command[0], "read") == 0)
         {
-            pthread_create(&threads[3], NULL, readFile, &params);
+            pthread_create(&threads[3], NULL, dosyaOku, &parameters);
             resp = 1;
         }
-        //if first element equals to exit, program gave a response and exit that client.
+        // exit komutu çağırılırsa client işlemi sonlandırılır
         else if (strcmp(command[0], "exit") == 0)
         {
-            printf("Client has been logged out.\n");
-            strcpy(response, "Program has finished\n");
+            strcpy(response, "Client islemi sonlandirildi!\n");
             resp = 1;
-            count--;
-            //if client number (count) = 0, exited file manager too.
-            if(count==0){
+            client_size--;
+            // bütün clientlar sonlandırılmışsa aynı şekilde manager da sonlandırılır
+            if (client_size == 0)
+            {
+                printf("Program sonlandirildi!\n");
                 file_read = open(myfifo, O_WRONLY);
                 write(file_read, response, sizeof(response));
                 close(file_read);
                 exit(0);
-            } 
-            //printf("%s\n", myArray[0]);
+            }
         }
-        //waits till the threads are finished
-        for (int i = 0; i < 4; i++)
+        else
+        {
+            // yanlış bir komut girilirse client tarafına response gönderilir
+            strcpy(response, "Hatali Komut Girdiniz!\n***Create***\n***Delete***\n***Write***\n***Read***\n***Exit***\n");
+            resp = 1;
+        }
+
+        for (int i = 0; i < 5; i++)
         {
             pthread_join(threads[i], &status);
         }
 
-        if(resp == 1){
+        if (resp == 1)
+        {
             file_read = open(myfifo, O_WRONLY);
             write(file_read, response, sizeof(response));
             close(file_read);
         }
-        
     }
-    //destroyed lock and cond variables.
+
     pthread_mutex_destroy(&lock);
     pthread_cond_destroy(&cond);
     exit(0);
